@@ -1,12 +1,13 @@
+
 import React, { useState, useMemo } from 'react';
 import { Product, Client, Sale, SaleType, SaleItem } from '../types';
-import { ShoppingCart, AlertCircle, CheckCircle2, Plus, Trash2, Package, Eye, X } from 'lucide-react';
+import { ShoppingCart, AlertCircle, CheckCircle2, Plus, Trash2, Package, Eye, X, DollarSign } from 'lucide-react';
 
 interface SalesProps {
   products: Product[];
   clients: Client[];
   sales: Sale[];
-  onSale: (items: { productId: string; quantity: number }[], type: SaleType, clientId?: string) => void;
+  onSale: (items: { productId: string; quantity: number }[], type: SaleType, clientId?: string, initialPayment?: number) => void;
 }
 
 export const Sales: React.FC<SalesProps> = ({ products, clients, sales, onSale }) => {
@@ -17,6 +18,7 @@ export const Sales: React.FC<SalesProps> = ({ products, clients, sales, onSale }
   
   const [saleType, setSaleType] = useState<SaleType>(SaleType.NORMAL);
   const [selectedClient, setSelectedClient] = useState('');
+  const [initialPayment, setInitialPayment] = useState(''); // Input for credit down payment
   const [notification, setNotification] = useState<{type: 'success'|'error', msg: string} | null>(null);
   const [filterClient, setFilterClient] = useState('');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null); // For detail modal
@@ -53,20 +55,27 @@ export const Sales: React.FC<SalesProps> = ({ products, clients, sales, onSale }
 
     // Filter out empty rows
     const validItems = cart.filter(c => c.productId);
+    const total = getCartTotal();
+    const downPayment = parseFloat(initialPayment) || 0;
 
     try {
       if (validItems.length === 0) throw new Error("Debe agregar al menos un producto");
+      if (saleType === SaleType.CREDIT && downPayment > total) {
+          throw new Error("El abono inicial no puede ser mayor al total");
+      }
 
       onSale(
         validItems.map(({ productId, quantity }) => ({ productId, quantity })),
         saleType,
-        saleType === SaleType.CREDIT ? selectedClient : (selectedClient || undefined)
+        saleType === SaleType.CREDIT ? selectedClient : (selectedClient || undefined),
+        saleType === SaleType.CREDIT ? downPayment : 0
       );
       
       // Reset Form
       setCart([{ tempId: 'init', productId: '', quantity: 1 }]);
       setSaleType(SaleType.NORMAL);
       setSelectedClient('');
+      setInitialPayment('');
       setNotification({ type: 'success', msg: 'Venta registrada correctamente' });
       
       setTimeout(() => setNotification(null), 3000);
@@ -214,6 +223,37 @@ export const Sales: React.FC<SalesProps> = ({ products, clients, sales, onSale }
                     ))}
                   </select>
                 </div>
+
+                {saleType === SaleType.CREDIT && (
+                  <div className="animate-slide-in">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Abono Inicial <span className="text-xs text-slate-500 font-normal">(Opcional)</span>
+                    </label>
+                    <div className="relative">
+                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                      <input 
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        max={getCartTotal()}
+                        className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-primary outline-none"
+                        value={initialPayment}
+                        onChange={e => setInitialPayment(e.target.value)}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div className="flex justify-between mt-1 text-xs">
+                      <span className="text-slate-500">Se pagará ahora:</span>
+                      <span className="font-bold text-emerald-600">${(parseFloat(initialPayment) || 0).toLocaleString('es-MX')}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Se cargará a deuda:</span>
+                      <span className="font-bold text-rose-600">
+                        ${Math.max(0, getCartTotal() - (parseFloat(initialPayment) || 0)).toLocaleString('es-MX')}
+                      </span>
+                    </div>
+                  </div>
+                )}
             </div>
 
             {/* Total Display */}
@@ -288,9 +328,16 @@ export const Sales: React.FC<SalesProps> = ({ products, clients, sales, onSale }
                     </td>
                     <td className="px-4 py-3">{sale.clientName || '-'}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${sale.type === SaleType.CREDIT ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
-                        {sale.type === SaleType.CREDIT ? 'Crédito' : 'Contado'}
-                      </span>
+                       <div className="flex flex-col items-start gap-1">
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${sale.type === SaleType.CREDIT ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                            {sale.type === SaleType.CREDIT ? 'Crédito' : 'Contado'}
+                          </span>
+                          {sale.type === SaleType.CREDIT && sale.cashPaid !== undefined && sale.cashPaid > 0 && (
+                             <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md border border-slate-200">
+                                Abonó: ${sale.cashPaid.toLocaleString('es-MX')}
+                             </span>
+                          )}
+                       </div>
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-slate-900">${sale.totalPrice.toLocaleString('es-MX')}</td>
                     <td className="px-4 py-3 text-center">
@@ -348,7 +395,7 @@ export const Sales: React.FC<SalesProps> = ({ products, clients, sales, onSale }
                     </div>
 
                     <h4 className="font-semibold text-slate-700 mb-3">Productos Comprados</h4>
-                    <div className="border rounded-lg overflow-hidden border-slate-200">
+                    <div className="border rounded-lg overflow-hidden border-slate-200 mb-6">
                         <table className="w-full text-sm text-left">
                             <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
                                 <tr>
@@ -368,13 +415,35 @@ export const Sales: React.FC<SalesProps> = ({ products, clients, sales, onSale }
                                     </tr>
                                 ))}
                             </tbody>
-                            <tfoot className="bg-slate-50 font-bold text-slate-800 border-t border-slate-200">
-                                <tr>
-                                    <td colSpan={3} className="px-4 py-3 text-right">Total General</td>
-                                    <td className="px-4 py-3 text-right text-lg text-primary">${selectedSale.totalPrice.toLocaleString('es-MX')}</td>
-                                </tr>
-                            </tfoot>
                         </table>
+                    </div>
+
+                    {/* Payment Summary */}
+                    <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-2">
+                        <div className="flex justify-between items-center">
+                           <span className="text-slate-600">Total de la Venta</span>
+                           <span className="font-bold text-slate-900 text-lg">${selectedSale.totalPrice.toLocaleString('es-MX')}</span>
+                        </div>
+                        {selectedSale.type === SaleType.CREDIT && (
+                          <>
+                             <div className="flex justify-between items-center text-sm border-t border-slate-200 pt-2">
+                                <span className="text-emerald-600 font-medium flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3"/> Pagado al momento
+                                </span>
+                                <span className="font-bold text-emerald-600">
+                                  ${(selectedSale.cashPaid || 0).toLocaleString('es-MX')}
+                                </span>
+                             </div>
+                             <div className="flex justify-between items-center text-sm">
+                                <span className="text-rose-600 font-medium flex items-center gap-1">
+                                  <AlertCircle className="w-3 h-3"/> Restante (A Deuda)
+                                </span>
+                                <span className="font-bold text-rose-600">
+                                  ${(selectedSale.totalPrice - (selectedSale.cashPaid || 0)).toLocaleString('es-MX')}
+                                </span>
+                             </div>
+                          </>
+                        )}
                     </div>
                 </div>
 

@@ -1,3 +1,4 @@
+
 export interface Product {
   id: string;
   name: string;
@@ -40,6 +41,7 @@ export interface Sale {
   clientId?: string;
   clientName?: string;
   totalPrice: number;
+  cashPaid?: number; // Amount paid immediately during transaction
   type: SaleType;
   date: string; // ISO string
 }

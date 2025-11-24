@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Product, Client, Sale, SaleType, Payment, SaleItem } from '../types';
 
@@ -130,7 +131,8 @@ export const useStore = () => {
   const addSale = (
     items: { productId: string; quantity: number }[], 
     type: SaleType, 
-    clientId?: string
+    clientId?: string,
+    initialPayment: number = 0 // New parameter for partial payments
   ) => {
     if (items.length === 0) throw new Error("El carrito está vacío");
 
@@ -172,6 +174,11 @@ export const useStore = () => {
       });
     }
 
+    // Validate Initial Payment
+    if (initialPayment > totalSalePrice) {
+        throw new Error("El abono inicial no puede ser mayor al total de la venta");
+    }
+
     let clientName = '';
 
     // 2. Update Product Stock
@@ -182,6 +189,7 @@ export const useStore = () => {
 
     // 3. Handle Credit Logic
     let updatedClients = [...clients];
+    
     if (type === SaleType.CREDIT) {
       if (!clientId) throw new Error("Cliente requerido para venta a crédito");
       
@@ -190,10 +198,14 @@ export const useStore = () => {
       
       clientName = client.name;
       
-      // Increase Debt
-      updatedClients = clients.map(c => 
-        c.id === clientId ? { ...c, debt: c.debt + totalSalePrice } : c
-      );
+      // Increase Debt (Total Price - Initial Cash Payment)
+      const debtIncrease = totalSalePrice - initialPayment;
+      
+      if (debtIncrease > 0) {
+        updatedClients = clients.map(c => 
+          c.id === clientId ? { ...c, debt: c.debt + debtIncrease } : c
+        );
+      }
     } else if (clientId) {
         const client = clients.find(c => c.id === clientId);
         if(client) clientName = client.name;
@@ -206,6 +218,7 @@ export const useStore = () => {
       clientId,
       clientName: clientName || 'Cliente General',
       totalPrice: totalSalePrice,
+      cashPaid: type === SaleType.CREDIT ? initialPayment : totalSalePrice, // Track what was actually paid now
       type,
       date: new Date().toISOString(),
     };
